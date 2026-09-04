@@ -1,5 +1,11 @@
 # implementation-ai
 
+> **Architecture:** the canonical description of Synkra's PocketBase instances,
+> which repo uses which one, and the identity model lives in one place:
+> [`SYNKRA-ARCHITECTURE.md` in `synkra-os`](https://github.com/Capacitiq-group/synkra-os/blob/main/SYNKRA-ARCHITECTURE.md).
+> Do not restate it here — update it there.
+
+
 Two different AI Employee jobs, same kind of system, one repo — per the
 project's own instruction to keep "an AI that does real work against
 PocketBase" under a single repo rather than splitting by job function.
