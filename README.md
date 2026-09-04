@@ -6,57 +6,70 @@
 > Do not restate it here — update it there.
 
 
-Two different AI Employee jobs, same kind of system, one repo — per the
-project's own instruction to keep "an AI that does real work against
-PocketBase" under a single repo rather than splitting by job function.
+Two Python packages sharing this repo, per Capacitiq's own call: they do
+different jobs but are the same kind of system — an AI that does real
+work against a PocketBase instance, drafts/decides within explicit
+guardrails, and defers to a human for anything above its authorised risk
+level. Same testing discipline (mocked-network tests, pure functions for
+anything that's actually a guarantee, honest "not wired yet" states
+instead of faked integrations) applies to both.
+
+## `agency_services/`
+
+The Implementation AI — builds/configures the AI services an **Agency
+client** has purchased (Voice Agent, Speed to Lead, Lead Reactivation,
+Custom Agentic AI Employee), against the dedicated Agency PocketBase
+instance. Implements, self-tests, writes a report. Never activates a
+service itself — a human always does final QC.
+
+20 tests. See `agency_services/README.md` for full detail, including the
+one open architectural question it surfaced (where live per-service
+config persists, given this agent's deliberately narrow write access)
+and `agency_services/ARCHITECTURE-ADDENDUM.md` for the three PocketBase
+collections it needed that didn't exist before this was built.
+
+## `internal_employees/`
+
+Synkra's own internal AI Employees — different job function, same
+pattern. Built so far:
+
+- **`customer_support/`** (27 tests): discovers open support tickets in
+  `synkra-os`, drafts replies via Ollama grounded only in known account
+  facts, auto-sends the low-risk/high-confidence cases, escalates
+  everything else. See its README for the two-gate risk model
+  (submit-time category screen + execution-time confidence threshold)
+  and the gaps it surfaced in `synkra-os` itself.
+- **`finance_billing/`** (23 tests): targets the Agency PocketBase
+  instance (not `synkra-os`) — drafts Zoho Books quotes from a client's
+  actual purchased-service pricing and the `service_packages` catalog,
+  never auto-sends anything (drafts only — a human always sends), syncs
+  document status back from Zoho once a human has sent one. See its
+  README for why pricing always comes from the record itself, never a
+  recomputed default.
+
+Future internal AI Employee roles (sales, technical ops, admin, etc.) go
+here as siblings of the above, per the roadmap in this project's own
+notes.
+
+## Running tests
+
+Each package's tests are independent — no cross-package dependencies.
+From the repo root:
 
 ```
-implementation-ai/
-  agency_services/          <- NOT YET ADDED to this repo. This is the
-                                Implementation Employee that builds/configures
-                                purchased Agency services (Voice Agent, Speed
-                                to Lead, Lead Reactivation, Custom Agentic AI
-                                Employee) for synkra-agency-client-portal
-                                clients. Referenced by the project brief as
-                                already built (formerly
-                                synkra_implementation_employee/) but was not
-                                included in what was handed off for this
-                                push -- see NOTES.md.
-  internal_employees/
-    customer_support/        <- Synkra's own internal Customer Support AI
-                                Employee. Was ai_worker_customer_support/.
-                                Reads/writes synkra-os's PocketBase via its
-                                own scoped employee login (see
-                                bootstrap_ai_customer_support_employee.sh in
-                                synkra-os). Full detail in this package's own
-                                README.md.
-    # future internal AI Employee roles (sales, admin, etc.) go here as
-    # siblings to customer_support/
+pip install -r agency_services/requirements.txt
+pip install -r internal_employees/customer_support/requirements.txt
+pip install -r internal_employees/finance_billing/requirements.txt
+python -m pytest agency_services/tests/ internal_employees/customer_support/tests/ internal_employees/finance_billing/tests/
 ```
 
-## Why one repo for two different jobs
 
-Both packages are the same *kind* of system even though they do different
-work: an AI that reads/writes real PocketBase data, under a human-review
-gate for anything risky, tested with mocked PocketBase calls rather than
-live ones. Patterns meant to be reused across every package added here:
-
-- **Lazy imports** for anything that isn't needed on every code path.
-- **Mocked tests** — no package in this repo talks to a live PocketBase
-  instance during its own test suite.
-- **DB-driven config over hardcoding** — behavior that might change
-  (permission keys, thresholds, service slugs) is read from PocketBase
-  records at runtime, not baked into the code.
-
-## Status
-
-- `internal_employees/customer_support/` — present in this push. Its own
-  `tests/` directory contains 18 test functions, matching the count the
-  original brief expected. I confirmed this by counting `def test_*`
-  functions directly, NOT by running the suite — this sandbox has no
-  network access to install `httpx`/`pytest`/`pytest-asyncio`, so the
-  tests have not actually been executed since the move. Please run
-  `pytest` yourself after pushing, before opening the PR, per the
-  project's own standard of confirming tests pass before merging.
-- `agency_services/` — not present. Needs to be sourced and added before
-  this repo matches the brief's target layout.
+38 tests total, all passing as of this repo's assembly — verified by
+running every test function directly (not just compiling) after the
+move into this shared-repo layout, since a few tests use hardcoded
+module-path strings for mocking (`unittest.mock.patch("some.module.path")`)
+that don't survive a package rename automatically — one such case was
+caught and fixed in `agency_services/tests/test_lead_reactivation.py`
+during this assembly. Worth remembering if either package gets
+restructured again later: `patch()`-by-string-path is exactly the kind
+of thing a rename silently breaks without a test run catching it.

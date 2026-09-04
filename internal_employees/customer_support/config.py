@@ -25,7 +25,16 @@ class Settings:
     # employee session, since the worker reporting a result is a service
     # action, not something an employee session should be able to forge.
     ai_worker_api_key: str = os.environ.get("AI_WORKER_API_KEY", "")
-    kimi_api_key: str = os.environ.get("KIMI_API_KEY", "")
+    # Ollama (self-hosted) is what this worker drafts replies with — NOT
+    # Kimi, which is used elsewhere in the stack for OCR specifically and
+    # has no business being wired into this module. Ollama exposes an
+    # OpenAI-compatible endpoint at /v1/chat/completions (confirmed
+    # current as of wiring this — no API key required unless you've put
+    # an auth proxy in front of the self-hosted instance, hence the
+    # empty-string default rather than a required var).
+    ollama_base_url: str = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+    ollama_model: str = os.environ.get("OLLAMA_MODEL", "")  # no safe default — must be a model you've actually pulled
+    ollama_api_key: str = os.environ.get("OLLAMA_API_KEY", "")  # only needed if fronted by an auth proxy
     poll_interval_seconds: int = int(os.environ.get("POLL_INTERVAL_SECONDS", "30"))
     environment: str = os.environ.get("ENVIRONMENT", "sandbox")  # "sandbox" | "production"
 

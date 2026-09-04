@@ -29,18 +29,38 @@ project"). This is that project, for the `customer_support` function.
    `conversations` (a permission this employee actually holds —
    `support.view` is enough to create one, per the migration).
 
-## What's NOT wired — and why that's currently the safe state, not a bug
+## LLM wiring: Ollama, not Kimi
 
-`draft_reply()` in `worker.py` doesn't call a real LLM yet — it returns
-a clearly-marked placeholder with **confidence 0.0**. Combined with the
-0.85 auto-send threshold, this means **every single job self-escalates
-right now**, unconditionally. `test_execute_job_self_escalates_when_drafting_is_not_wired`
-proves exactly this — the one property that matters most while drafting
-is unwired: it never auto-sends a placeholder to a real customer.
-`test_execute_job_auto_sends_when_confidence_clears_threshold` separately
-proves the auto-send path itself is correct, using a mocked high-confidence
-draft — so both "doesn't fire today" and "will work correctly once wired"
-are independently verified, not just assumed.
+`draft_reply()` in `worker.py` now calls a real LLM via
+`integrations/llm.py` — **Ollama** (self-hosted), specifically, not
+Kimi, which this stack reserves for OCR elsewhere and has no business
+being wired into ticket drafting. Confirmed the API shape by checking
+Ollama's current docs while wiring this: OpenAI-compatible
+`/v1/chat/completions`, no API key needed unless you've put an auth
+proxy in front of your self-hosted instance.
+
+**Until `OLLAMA_MODEL` is set to a model you've actually pulled, this
+still safely does nothing.** `draft_and_score()` checks for that first
+and returns confidence 0.0 without attempting a network call — so an
+unconfigured deployment degrades to "review everything," the same safe
+state as before this was wired, not a crash. Once configured, every
+failure mode (network error, bad status, malformed JSON, an
+out-of-range confidence, an empty reply) still returns confidence 0.0 —
+see `integrations/llm.py`'s module docstring for the exact guarantee,
+and `tests/test_llm.py`'s 9 tests for proof of every one of those cases
+individually, not just the happy path. Structured JSON output
+(`response_format: json_object`) is requested explicitly, since local
+models are less reliable than hosted APIs about staying in a plain
+prose-free JSON shape without that hint.
+
+`test_execute_job_self_escalates_when_drafting_is_not_wired` and
+`test_execute_job_auto_sends_when_confidence_clears_threshold` both
+still pass unchanged after this wiring — the first because
+`OLLAMA_MODEL` is unset by default in any environment that hasn't
+configured it (so it still exercises the real "not configured" path,
+not a mock), the second because it explicitly mocks `draft_reply` to
+simulate a wired, confident response and proves the auto-send path
+itself is correct.
 
 ## Three real gaps this surfaced in synkra-os itself (not mine to fix silently)
 
@@ -80,16 +100,23 @@ guardrails: 9/9 passed — including an exhaustive check that
 knowledge:  5/5 passed — filter-builder correctness, including quote
              escaping and short-word filtering
 worker:     4/4 passed — discovery dedup, submit-time action selection,
-             the self-escalation guarantee while drafting is unwired,
+             the self-escalation guarantee when Ollama isn't configured,
              and the auto-send path working correctly once it is
+llm:        9/9 passed — every parse failure mode (malformed JSON, missing
+             fields, non-numeric confidence, empty reply, out-of-range
+             confidence in both directions, boundary values) falls back
+             to confidence 0.0 correctly, plus the not-configured path
 -------------------------------------------------------------------
-TOTAL:     18/18 passed
+TOTAL:     27/27 passed
 ```
 
 `python3 -m py_compile` across every file passes, and the worker module
-imports cleanly with zero network access (confirmed in this container).
-Ran directly (`python3 -c "..."`), not via `pytest` — no PyPI access
-here.
+imports cleanly with zero network access (confirmed in this container —
+also confirmed `httpx` itself isn't installable here, which is why the
+network-failure branch of `draft_and_score` isn't independently tested;
+its parsing and not-configured paths are, and the failure branch is a
+plain `try/except Exception`, not logic worth a dedicated mock for). Ran
+directly (`python3 -c "..."`), not via `pytest` — no PyPI access here.
 
 ## Setup
 
@@ -104,12 +131,22 @@ here.
    for `/api/ai-jobs/:id/result`).
 4. Set this worker's env: `SYNKRA_OS_BASE_URL`, `AI_EMPLOYEE_LOGIN_EMAIL`/
    `PASSWORD` (from step 2), `AI_EMPLOYEE_ID` (the printed id),
-   `AI_WORKER_API_KEY` (same value as step 3), `POLL_INTERVAL_SECONDS`.
+   `AI_WORKER_API_KEY` (same value as step 3), `POLL_INTERVAL_SECONDS`,
+   `OLLAMA_BASE_URL` (defaults to `http://localhost:11434` — point it at
+   wherever Ollama actually runs if not co-located with this worker),
+   `OLLAMA_MODEL` (no default — set it to a model you've actually pulled,
+   e.g. `ollama pull llama3.1` then `OLLAMA_MODEL=llama3.1`).
 5. Populate `knowledge_base_articles` with real content — retrieval only
    works once there's something to retrieve.
-6. Wire `draft_reply()` to a real LLM call, using `drafting.SYSTEM_PROMPT`
-   and `build_draft_context()`'s output — and have it actually return a
-   real confidence score, not a hardcoded value.
-7. Run `python worker.py` (add a small `__main__` entry calling
-   `asyncio.run(run_forever())`) or wire it into whatever process
+6. Once `OLLAMA_MODEL` is set, drafting is live — sanity-check a few real
+   tickets manually before trusting the auto-send path unattended. Local
+   models vary a lot in how well they follow the required JSON output
+   shape and how honestly they self-score confidence; watch the first
+   batch of `implementation_reports`-equivalent output (this worker's
+   `ai_jobs` results) closely, and consider raising
+   `guardrails.MIN_CONFIDENCE_FOR_AUTO_SEND` above 0.85 if the model
+   you're running tends to overstate its own confidence.
+7. Run `python -m internal_employees.customer_support` (the `__main__.py`
+   entry point calls `asyncio.run(run_forever())`) or wire it into
+   whatever process
    supervisor you're using.

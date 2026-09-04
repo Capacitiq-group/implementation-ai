@@ -9,37 +9,34 @@ Two responsibilities per cycle:
    draft a reply, decide auto-send vs. self-escalate (execution-time
    gate: guardrails.should_auto_send), and report the result.
 
-Drafting itself (the actual LLM call) is NOT wired to a real provider —
-same honest "not wired yet" state as the Implementation Employee's
-self-test scenarios. draft_reply() below is where that call goes; right
-now it returns a clearly-marked placeholder with confidence=0.0, which
-guardrails.should_auto_send will always route to self-escalation, never
-an accidental auto-send of unreviewed placeholder text.
+Drafting is wired to Ollama (self-hosted) via integrations/llm.py —
+NOT Kimi, which this stack uses for OCR elsewhere. If OLLAMA_MODEL isn't
+set to a model you've actually pulled, or the call fails for any reason,
+draft_and_score() always returns confidence 0.0 (see that module's
+docstring for the exact guarantee), which guardrails.should_auto_send
+always routes to self-escalation — so an unconfigured or failing LLM
+degrades to "review everything," never to "send unreviewed text."
 """
 
 import asyncio
 
 from . import discovery, guardrails, knowledge
 from .config import settings
-from .drafting import build_draft_context
+from .drafting import SYSTEM_PROMPT, build_draft_context
+from .integrations.llm import draft_and_score
 from .integrations.pocketbase import synkra_os
 
 
 async def draft_reply(ticket: dict, customer: dict, conversation_history: list[dict], kb_results: list[dict]) -> tuple[str, float]:
     """
-    Returns (draft_body, confidence). NOT WIRED to a real LLM call yet —
-    see module docstring. When wired: call the LLM with drafting.SYSTEM_PROMPT
-    and build_draft_context(...)'s output, parse a confidence score from
-    the response (or a separate self-rating call), and return both.
+    Returns (draft_body, confidence). Wired to Ollama via
+    integrations/llm.py — see that module for the safety guarantee that
+    any failure (network, parsing, an out-of-range confidence) returns
+    confidence 0.0 rather than raising or guessing, which always routes
+    to self-escalation, never an accidental auto-send.
     """
     context = build_draft_context(ticket, customer, conversation_history, kb_results)
-    placeholder = (
-        f"[NOT WIRED — no LLM call configured yet. Would draft a reply here "
-        f"grounded in: ticket subject {context['ticket_subject']!r}, "
-        f"{len(context['conversation_history'])} prior message(s), "
-        f"{len(context['knowledge_base_results'])} knowledge base result(s).]"
-    )
-    return placeholder, 0.0
+    return await draft_and_score(SYSTEM_PROMPT, context)
 
 
 async def discover_and_submit() -> list[dict]:
