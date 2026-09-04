@@ -13,23 +13,13 @@ not a second source of truth, they are advisory and must never diverge
 from ai_jobs.pb.js in synkra-os.
 """
 
-# Mirrors ai_jobs.pb.js AI_GLOBAL_DENYLIST exactly.
-AI_GLOBAL_DENYLIST = {
-    "billing.refund",
-    "billing.modify",
-    "customers.impersonate",
-    "employees.manage",
-    "permissions.manage",
-    "infrastructure.restart",
-    "deployments.execute",
-    "ai.configure",
-}
-
-# Mirrors ai_jobs.pb.js ALWAYS_REQUIRES_REVIEW exactly.
-ALWAYS_REQUIRES_REVIEW = {
-    "customers.edit",
-    "support.manage",
-}
+# The denylist mirror now lives once, in _framework/guardrails.py, and is
+# re-exported here so existing imports and tests keep working.
+from .._framework.guardrails import (  # noqa: F401
+    AI_GLOBAL_DENYLIST,
+    ALWAYS_REQUIRES_REVIEW,
+    assert_action_is_safe as _assert_action_is_safe,
+)
 
 # The only two actions this specific AI employee is configured with in
 # its ai_employees.permitted_actions field (see bootstrap script). Kept
@@ -85,14 +75,9 @@ def assert_action_is_safe(action: str) -> None:
     """
     Defense in depth: raises if something ever tries to use an action
     outside this employee's permitted set or inside the global denylist.
-    choose_action() above can only produce safe outputs by construction,
-    but any other code path that might submit a job (discovery.py,
-    future task types) should call this before submitting, so a bug
-    there fails loudly instead of silently reaching the server with a
-    bad action (which the server would also reject, but failing here is
-    faster to diagnose and doesn't burn a wasted round trip).
+    choose_submit_action() above can only produce safe outputs by
+    construction, but any other code path that might submit a job should
+    call this first, so a bug fails loudly here instead of reaching the
+    server (which would also reject it, just slower to diagnose).
     """
-    if action in AI_GLOBAL_DENYLIST:
-        raise ValueError(f"Action {action!r} is on the global AI denylist — refusing to submit.")
-    if action not in PERMITTED_ACTIONS:
-        raise ValueError(f"Action {action!r} is not in this employee's permitted_actions — refusing to submit.")
+    _assert_action_is_safe(action, PERMITTED_ACTIONS)

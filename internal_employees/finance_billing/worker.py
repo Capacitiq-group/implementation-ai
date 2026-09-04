@@ -10,7 +10,7 @@ Two responsibilities per cycle:
    the local status if it's moved (accepted/declined/paid/overdue).
 """
 
-import asyncio
+from .._framework.worker_loop import run_forever as loop_forever
 
 from . import discovery, guardrails, packages
 from .config import settings
@@ -127,6 +127,5 @@ async def run_once() -> None:
 
 
 async def run_forever() -> None:
-    while True:
-        await run_once()
-        await asyncio.sleep(settings.poll_interval_seconds)
+    # Loop itself is shared — see _framework/worker_loop.py.
+    await loop_forever(run_once, settings.poll_interval_seconds)
