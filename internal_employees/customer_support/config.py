@@ -25,7 +25,9 @@ class Settings:
     # per ai_jobs.pb.js, this route deliberately does not accept an
     # employee session, since the worker reporting a result is a service
     # action, not something an employee session should be able to forge.
-    ai_worker_api_key: str = env_str("AI_WORKER_API_KEY", "")
+    # This employee's OWN token — the old shared AI_WORKER_API_KEY has
+    # been retired, so there is deliberately no fallback to it.
+    ai_worker_api_key: str = env_str("AI_WORKER_API_KEY_CUSTOMER_SUPPORT", "")
     # Ollama (self-hosted) is what this worker drafts replies with — NOT
     # Kimi, which is used elsewhere in the stack for OCR specifically and
     # has no business being wired into this module. Ollama exposes an
