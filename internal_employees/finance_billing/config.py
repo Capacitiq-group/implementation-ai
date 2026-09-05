@@ -15,8 +15,16 @@ from .._framework.env import env_int, env_str
 
 @dataclass(frozen=True)
 class Settings:
-    pocketbase_url: str = env_str("POCKETBASE_URL", "")
-    pocketbase_service_token: str = env_str("POCKETBASE_SERVICE_TOKEN", "")
+    pocketbase_url: str = env_str("FINANCE_POCKETBASE_URL", "") or env_str("SYNKRA_PB_URL", "")
+    pocketbase_service_token: str = env_str("FINANCE_POCKETBASE_SERVICE_TOKEN", "")
+
+    # Synkra OS job queue — this employee's own login and its own
+    # job-result token. Nothing here is shared with Customer Support.
+    synkra_os_base_url: str = env_str("SYNKRA_APP_URL", "")
+    ai_employee_login_email: str = env_str("FINANCE_AI_EMPLOYEE_LOGIN_EMAIL", "")
+    ai_employee_login_password: str = env_str("FINANCE_AI_EMPLOYEE_LOGIN_PASSWORD", "")
+    ai_employee_id: str = env_str("FINANCE_AI_EMPLOYEE_ID", "")
+    ai_worker_api_key: str = env_str("AI_WORKER_API_KEY_FINANCE_BILLING", "")
     # ^ Scoped, non-superuser — see README for the exact collection access
     # this employee actually needs, which is deliberately narrow.
 
